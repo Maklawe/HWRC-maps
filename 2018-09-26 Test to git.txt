@@ -1,0 +1,119 @@
+m(list = ls())##Clear all history
+"%!in%" <- function(x,table) match(x,table, nomatch = 0) == 0##Function enabling 
+#to exclude or omit multiple rows
+#Loading library
+library(tidyverse)
+library(lubridate)
+library(forcats)
+library(ggseas)
+library(magrittr)
+library(stringr)
+library(stringi)
+library(readxl)
+library(mapDK)#This package requires "devtools" #
+#install.packages("devtools")
+#library(devtools)
+#devtools::install_github("sebastianbarfort/mapDK")
+library(mapproj)
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+##FIGURE 1: Map of Denmark #####################################################
+##Loading data
+#Population from DST BOL103
+DK_2018 <- read_excel("H:/Paper and Article/Paper_HRC/data_all/DK_2018.xlsx",
+  range = "B3:K696", col_types = c("text","numeric","text", "numeric", "numeric",
+    "numeric", "numeric", "numeric",
+    "numeric", "numeric"))
+
+#Data cleaning and calculation to obtain the number of population and 
+#inhabitants for all municipalities in Denmark
+DK_population=
+  DK_2018%>%
+  mutate(Kommune=str_replace_all(Kommune,
+    c("æ"="ae","å"="aa","ø"="oe","Å"="Aa","Ø"="Oe","Æ"="Ae")))%>%
+  gather(Year,Pop,`2010`:`2016`)%>%
+  mutate(Pep=Pop*Antal_pers)%>%select(-Antal,-Antal_pers)%>%
+  group_by(Year,Kommune)%>%summarise(Household=sum(Pop),Person=sum(Pep))
+
+##Select only data for 2016
+DK_population2016=
+  DK_population%>%
+  filter(Year%in% "2016")
+
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+##Loading data for geocode for all HWRC
+##
+geocode_2018 <- read_excel("H:/Paper and Article/Paper_HRC/data_all/geocode_2018.xlsx",
+  sheet = "Sheet2")
+
+###Cleaning data process for geocode of HWRC
+#geocode_2018%>%View()# To view all dataset
+#geocode_2018%>%head()#to view the first 10 rows
+##Cleaning a data and calculations:
+
+maps_data2=
+  geocode_2018%>%
+  mutate(Address=str_replace_all(Address,
+    c("æ"="ae","å"="aa","ø"="oe","Å"="Aa","Ø"="Oe","Æ"="Ae")))%>%
+  #Replcace all danish letters with english letter
+  mutate(`Returned address`=str_replace_all(`Returned address`,
+    c("æ"="ae","å"="aa","ø"="oe","Å"="Aa","Ø"="Oe","Æ"="Ae")))%>%
+  separate(Address, c("Street","Nummer","Country"), 
+    sep = ",", remove = FALSE, convert = FALSE)%>%
+  #Replcace all danish letters with english letter
+  select(-Country,-`Returned address`)%>%
+  #drop columns: countries and Returned address
+  distinct(Address,.keep_all = TRUE)%>%#eleminate duplicate given address
+  distinct(Latitude,Longitude,.keep_all = TRUE)%>%#eleminate duplicate for altitued
+  mutate(By=str_extract(Nummer, "[a-z,A-Z]+" ))%>%as.data.frame()%>%
+  #extract only letter in the string (column)
+  mutate(Post=str_extract(Nummer, "[0-9]+" ))%>%as.data.frame()%>%
+  #extract only number in the string (column)
+  distinct(By,Street,.keep_all = TRUE)%>%#eleminate duplicate for city and street
+  filter(Address%!in% c("Borgervaenget 29, 2100 Koebenhavn Oe, Danmark",
+    "Graaskegaardevej 6, 8400 Ebeltoft, Danmark"))%>%#exclude this HWRC
+  #because of change in address. The new address is  Sibeliusgade 80
+  mutate(New_area=ifelse(By%in%c("Kastrup","Hvidovre","Frederiksberg",
+    "Koebenhavn","Dragoer","Valby"),"Greater Copenhagen",
+    ifelse(By%in%c("Silkeborg","Them"),"Silkeborg",
+      ifelse(By%in%c("Eskebjerg","Kalundborg","Koege","Roskilde","Haarlev","Hoeng",
+        "Sejeroe","Store","Kirke","Bjaeverskov","Goerlev","Jyllinge"),"Central Zealand",
+        ifelse(By%in% c("Anholt","Allingaabro","Ebeltof","Roende",
+          "Glesborg","Grenaa","Hornslet","Knebel","Ryomgaard"),"Djursland",
+          "Not included")))))%>%
+  mutate(New_area=ifelse(Address%in%c("Rugvaenget 1, 4490 Jerslev Sj, Danmark",
+    "Vestergade 25B, 4130 Viby Sjaelland",
+    "Brohaven 2, Jyllinge, Danmark"),
+    "Central Zealand",paste0(New_area)))%>%
+  mutate(sorting=ifelse(Address %in% 
+      c("Tandskovvej 17, 8600 Silkeborg, Danmark",
+        "Tietgensvej 7, 8600 Silkeborg, Danmark",
+        "Herjedalgade 2-4, 2300 Koebenhavn S, Danmark",
+        "Avedoereholmen 97, 2650 Hvidovre, Danmark",
+        "Kalorievej 2, 8500 Grenaa, Danmark",
+        "Vestergade 25B, 4130 Viby Sjaelland",
+        "Brohaven 2, Jyllinge, Danmark"),"WS","Not"))
+#end of the first data cleaning
+unique(maps_data2$New_area)
+##Forced the order of variables
+maps_data2$New_area=factor(maps_data2$New_area,levels=c(
+  "Greater Copenhagen","Central Zealand","Djursland","Silkeborg","Not included"))
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+###FIGURE 1******************************************************************
+mapDK(values = "Person", id = "Kommune", data = DK_population2016)+
+  geom_point(data =maps_data2, 
+    aes(Longitude,Latitude,group=New_area,
+      colour=New_area,shape=sorting),size=3,fill="black",
+    alpha=I(0.7))+
+  scale_shape_manual(values=c(20,17))+
+  scale_color_manual(values=c("red","green","magenta","blue","grey"))+
+  theme(axis.text = element_text(""))+
+  theme_bw()+
+  labs(x="Longitude",y="Latitude",colour="Study areas",
+    group="Number of inhabitant per municipality")+
+  theme(text =element_text(colour = "black", face = "bold", size = 12))
+
+#End of Figure 1
